@@ -8,24 +8,24 @@ defmodule Punting.TcpServer do
     # Server 
 
     def init({ip, port, players, map}) do
-        case :gen_tcp.listen(port, [:binary,{:packet, 0},{:active,false},{:ip,ip}]) do
+        map_data = load_map(map)
+        origin_state = %{
+            socket: nil,
+            ip: ip, 
+            port: port, 
+            name: map, 
+            map: map_data, 
+            status: "Waiting for punters. (0/#{players})",
+            players: players, 
+            workers: %{},
+            listeners: []
+            }
+        case listen(ip, port) do
             {:ok, listen_socket} ->
-                map_data = load_map(map)
                 send self(), {:accept, listen_socket}
-                {:ok, %{
-                    socket: listen_socket, 
-                    ip: ip, 
-                    port: port, 
-                    name: map, 
-                    map: map_data, 
-                    status: "Waiting for punters. (0/#{players})",
-                    players: players, 
-                    workers: %{},
-                    listeners: []
-                    }
-                }
+                {:ok, %{origin_state | socket: listen_socket}}
             {:error, :eaddrinuse} ->
-                {:stop, "Couldn't listen on port #{port}: Address already in use"}
+                {:ok, origin_state, 1000}
         end
     end
 
@@ -81,6 +81,17 @@ defmodule Punting.TcpServer do
         {:noreply, %{state | status: new_status, workers: new_workers}}
     end
 
+    def handle_info({:timeout, new_state}, _state) do
+        IO.puts("TcpServer: Address was in use, trying to listen again.")
+        case listen(new_state.ip, new_state.port) do
+            {:ok, listen_socket} ->
+                send self(), {:accept, listen_socket}
+                {:ok, %{new_state | socket: listen_socket}}
+            {:error, :eaddrinuse} ->
+                {:stop, "Couldn't listen on port #{new_state.port}: Address already in use"}
+        end
+    end
+
     def handle_info({:accept, listen_socket}, state) do
         case :gen_tcp.accept(listen_socket, 250) do
             {:ok, client_socket} ->
@@ -99,6 +110,10 @@ defmodule Punting.TcpServer do
         IO.puts("TcpServer: notifying #{length(state.listeners)} listeners: event #{inspect(event)}")
         Enum.each(state.listeners, fn l -> send l, {:event, event} end)
         {:noreply, state}
+    end
+
+    defp listen(ip, port) do
+        :gen_tcp.listen(port, [:binary,{:packet, 0},{:active,false},{:ip,ip}])
     end
 
     defp all_ready(workers) do
