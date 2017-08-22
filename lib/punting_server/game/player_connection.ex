@@ -18,6 +18,11 @@ defmodule Punting.TcpServer.PlayerConnection do
         {:reply, {:ok, nil}, state}
     end
 
+    def handle_cast({:move, moves}, state) do
+        :gen_tcp.send(state.socket, encode(%{"move" => %{"moves" => moves}}))
+        {:noreply, state}
+    end
+
     def handle_info({:recv, _}, state) do
 
         case recv_msg(state.socket) do

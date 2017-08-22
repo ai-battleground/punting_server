@@ -41,7 +41,8 @@ defmodule Punting.TcpServer do
         workers = state.workers |> Map.put(id, %{
             pid: worker,
             id: id,
-            player: player})
+            player: player,
+            moves: []})
 
         player_count = length(Map.keys(workers))
         status = if player_count < state.players do
@@ -69,11 +70,12 @@ defmodule Punting.TcpServer do
 
     def handle_cast({:ready, id}, state) do
         IO.puts("TcpServer: Player #{id} is ready.")
-        worker = %{^id => %{id: id}} = state.workers
-        |> Map.put_new(:ready, true)
-        new_workers = state.workers |> Map.replace(id, worker)
+        %{^id => %{id: id} = worker} = state.workers
+        new_workers = state.workers 
+        |> Map.replace(id, Map.put_new(worker, :ready, true))
         new_status = if all_ready(new_workers) do
             send self(), {:notify, {:start}}
+            send self(), {:move}
             "Game in progress."
         else
             state.status
@@ -112,6 +114,12 @@ defmodule Punting.TcpServer do
         {:noreply, state}
     end
 
+    def handle_info({:move}, state) do
+        choose_turn(state.workers)
+        |> move(moves(state.workers))
+        {:noreply, state}
+    end
+
     defp listen(ip, port) do
         :gen_tcp.listen(port, [:binary,{:packet, 0},{:active,false},{:ip,ip}])
     end
@@ -128,6 +136,27 @@ defmodule Punting.TcpServer do
         |> Path.join("#{name}.json")
         |> File.read!
         |> Poison.decode!
+    end
+
+    defp choose_turn(workers) do
+        first = workers |> Map.get(0)
+        moves = first.moves
+        turn = length(moves)
+        Enum.find(Map.keys(workers), first, fn id -> 
+            length(Map.get(workers, id).moves) < turn 
+        end)
+    end
+
+    defp moves(workers) do
+        workers
+        |> Map.values
+        |> Enum.map(fn w -> 
+            %{"pass" => %{"punter" => w.id}}
+        end)
+    end
+
+    defp move(worker, moves) do
+        GenServer.cast worker.pid, {:move, moves}
     end
 
     # Client

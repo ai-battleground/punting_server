@@ -2,7 +2,6 @@ alias Punting.TcpServer
 alias Punting.TcpServer.PlayerSupervisor
 
 defmodule Punting.TcpServerTest do
-
   use ExUnit.Case
   
   @moduletag :functional
@@ -114,6 +113,34 @@ defmodule Punting.TcpServerTest do
     assert event == :start
 
     assert "Game in progress." == GenServer.call(pid, {:status})
+  end
+
+  test "first player is prompted to move once all players are ready" do
+    {:ok, _sup_pid} = start_supervised(PlayerSupervisor)
+    {:ok, pid} = start_supervised({TcpServer, {2, "sample"}})
+    GenServer.cast(pid, {:subscribe_events, self()})
+
+    {socket1, _resp1} = connect_and_handshake("punter1")
+    {socket2, _resp2} = connect_and_handshake("punter2")
+
+    %{"punter" => id1} = recv_msg(socket1) |> Poison.decode!
+    %{"punter" => id2} = recv_msg(socket2) |> Poison.decode!
+
+    send_json(socket1, %{ready: id1})
+    send_json(socket2, %{ready: id2})
+    result = receive do
+        {:event, {:start}} ->
+          :ok
+      after
+        2_000 -> :test_timeout
+      end
+    assert result == :ok
+
+    expected_prompt = %{"move" => %{"moves" => [
+      %{"pass" => %{"punter" => 0}},
+      %{"pass" => %{"punter" => 1}}
+      ]}}
+    assert expected_prompt == recv_msg(socket1) |> Poison.decode!
   end
 
   defp connect_and_handshake(player) do
