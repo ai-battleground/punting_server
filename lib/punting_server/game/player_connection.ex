@@ -36,7 +36,7 @@ defmodule Punting.TcpServer.PlayerConnection do
                 {:noreply, state}
             {:error, error} ->
                 IO.puts("PlayerConnection Error: #{error}")
-                {:noreply, state}
+                {:stop, error, state}
         end
     end
 

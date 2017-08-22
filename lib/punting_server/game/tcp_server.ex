@@ -70,10 +70,9 @@ defmodule Punting.TcpServer do
 
     def handle_cast({:ready, id}, state) do
         IO.puts("TcpServer: Player #{id} is ready.")
-        %{^id => %{id: id} = worker} = state.workers
-        new_workers = state.workers 
-        |> Map.replace(id, Map.put_new(worker, :ready, true))
-        new_status = if all_ready(new_workers) do
+        worker = state.workers |> find_worker(id)
+        new_workers = flag_ready(worker, state.workers)
+        new_status = if all_ready?(new_workers) do
             send self(), {:notify, {:start}}
             send self(), {:move}
             "Game in progress."
@@ -124,7 +123,17 @@ defmodule Punting.TcpServer do
         :gen_tcp.listen(port, [:binary,{:packet, 0},{:active,false},{:ip,ip}])
     end
 
-    defp all_ready(workers) do
+    defp find_worker(workers, id) do
+        %{^id => %{id: ^id} = worker} = workers
+        worker
+    end
+
+    defp flag_ready(worker, workers) do
+        flagged = worker |> Map.put_new(:ready, true)
+        workers |> Map.replace(worker.id, flagged)
+    end
+
+    defp all_ready?(workers) do
         workers
         |> Map.values
         |> Enum.all?(fn w -> w[:ready] end)
