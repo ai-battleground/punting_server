@@ -115,7 +115,7 @@ defmodule Punting.TcpServerTest do
     assert "Game in progress." == GenServer.call(pid, {:status})
   end
 
-  test "first player is prompted to move once all players are ready" do
+  test "players are prompted to move in turn once all players are ready" do
     {:ok, _sup_pid} = start_supervised(PlayerSupervisor)
     {:ok, pid} = start_supervised({TcpServer, {2, "sample"}})
     GenServer.cast(pid, {:subscribe_events, self()})
@@ -136,27 +136,38 @@ defmodule Punting.TcpServerTest do
       end
     assert result == :ok
 
-    expected_prompt = %{"move" => %{"moves" => [
+    expected_prompt_1 = %{"move" => %{"moves" => [
       %{"pass" => %{"punter" => 0}},
       %{"pass" => %{"punter" => 1}}
       ]}}
-    assert expected_prompt == recv_msg(socket1) |> Poison.decode!
+    assert expected_prompt_1 == recv_msg(socket1) |> Poison.decode!
+
+    move_1 = %{"claim" => %{"punter" => 0, "source" => 0, "target" => 1}}
+    send_json(socket1, move_1)
+
+    expected_prompt_2 = %{"move" => %{"moves" => [
+      move_1,
+      %{"pass" => %{"punter" => 1}}
+      ]}}
+    assert expected_prompt_2 == recv_msg(socket2) |> Poison.decode!
   end
 
   defp connect_and_handshake(player) do
     port = Application.get_env :punting_server, :port
 
-    IO.puts("Test: connecting...")
-    {:ok, socket} = :gen_tcp.connect('localhost', port,
-      active: false, mode: :binary, packet: :raw)
-    IO.puts("Test: connected.")
+    case :gen_tcp.connect('localhost', port,
+      active: false, mode: :binary, packet: :raw) do
+      {:ok, socket} ->    
+        IO.puts("Test: connected.")
 
-    send_json(socket, %{"me" => player})
-    IO.puts("Test: handshake sent.")
+        send_json(socket, %{"me" => player})
 
-    received = recv_msg(socket)
-    IO.puts("Test: handshake received.")
-    {socket, received}
+        received = recv_msg(socket)
+        IO.puts("Test: handshake complete.")
+        {socket, received}
+      {:error, error} ->
+        flunk inspect(error)
+    end
   end
 
   defp recv_msg(socket, timeout \\ 10000) do

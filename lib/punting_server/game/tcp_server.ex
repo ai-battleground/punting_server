@@ -3,7 +3,7 @@ alias Punting.TcpServer.PlayerSupervisor
 
 defmodule Punting.TcpServer do
     use GenServer
-    defstruct ~w[socket ip port name map status players workers listeners]a
+    defstruct ~w[socket ip port name map status players workers moves listeners]a
 
     # Server 
 
@@ -14,7 +14,7 @@ defmodule Punting.TcpServer do
             ip: ip, 
             port: port, 
             name: map, 
-            map: map_data, 
+            map: map_data,
             status: "Waiting for punters. (0/#{players})",
             players: players, 
             workers: %{},
@@ -74,12 +74,22 @@ defmodule Punting.TcpServer do
         new_workers = flag_ready(worker, state.workers)
         new_status = if all_ready?(new_workers) do
             send self(), {:notify, {:start}}
-            send self(), {:move}
+            send self(), {:nextmove}
             "Game in progress."
         else
             state.status
         end
         {:noreply, %{state | status: new_status, workers: new_workers}}
+    end
+
+    def handle_cast({:move, {:claim, claim}}, state) do
+        punter = claim |> Map.get("punter")
+        %{^punter => worker} = state.workers
+        send self(), {:nextmove}
+        {:noreply, %{state | 
+            workers: state.workers 
+                |> Map.replace(punter, 
+                    %{worker | moves: [%{"claim" => claim} | worker.moves]})}}
     end
 
     def handle_info({:timeout, new_state}, _state) do
@@ -113,9 +123,9 @@ defmodule Punting.TcpServer do
         {:noreply, state}
     end
 
-    def handle_info({:move}, state) do
+    def handle_info({:nextmove}, state) do
         choose_turn(state.workers)
-        |> move(moves(state.workers))
+        |> offer_move(moves(state.workers))
         {:noreply, state}
     end
 
@@ -151,8 +161,8 @@ defmodule Punting.TcpServer do
         first = workers |> Map.get(0)
         moves = first.moves
         turn = length(moves)
-        Enum.find(Map.keys(workers), first, fn id -> 
-            length(Map.get(workers, id).moves) < turn 
+        Enum.find(Map.values(workers), first, fn w -> 
+            length(w.moves) < turn 
         end)
     end
 
@@ -160,12 +170,13 @@ defmodule Punting.TcpServer do
         workers
         |> Map.values
         |> Enum.map(fn w -> 
-            %{"pass" => %{"punter" => w.id}}
+            w.moves |> List.last
+            || %{"pass" => %{"punter" => w.id}}
         end)
     end
 
-    defp move(worker, moves) do
-        GenServer.cast worker.pid, {:move, moves}
+    defp offer_move(worker, moves) do
+        GenServer.cast worker.pid, {:offer, moves}
     end
 
     # Client

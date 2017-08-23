@@ -18,7 +18,7 @@ defmodule Punting.TcpServer.PlayerConnection do
         {:reply, {:ok, nil}, state}
     end
 
-    def handle_cast({:move, moves}, state) do
+    def handle_cast({:offer, moves}, state) do
         :gen_tcp.send(state.socket, encode(%{"move" => %{"moves" => moves}}))
         {:noreply, state}
     end
@@ -81,12 +81,21 @@ defmodule Punting.TcpServer.PlayerConnection do
         {:noreply, state}
     end
 
+    def handle_info({:move, {_type, %{"punter" => _punter} } } = move, state) do
+        GenServer.cast(state.server, move)
+        {:noreply, state}
+    end
+
     defp parse(json) do
         case Poison.decode!(json) do
             %{"me" => player} ->
                 {:handshake, %{player: player}}
             %{"ready" => id} ->
                 {:ready, %{id: id}}
+            %{"claim" => claim} ->
+                {:move, {:claim, claim}}
+            %{"pass" => pass} ->
+                {:move, {:pass, pass}}
         end
     end
 
