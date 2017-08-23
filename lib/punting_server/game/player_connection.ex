@@ -18,6 +18,15 @@ defmodule Punting.TcpServer.PlayerConnection do
         {:reply, {:ok, nil}, state}
     end
 
+    def handle_cast({:begin, %{players: players, map: map}}, state) do
+        :gen_tcp.send(state.socket, encode(%{
+            punter: state.id,
+            punters: players,
+            map: map
+        }))
+        {:noreply, state}
+    end
+
     def handle_cast({:offer, moves}, state) do
         :gen_tcp.send(state.socket, encode(%{"move" => %{"moves" => moves}}))
         {:noreply, state}
@@ -69,15 +78,6 @@ defmodule Punting.TcpServer.PlayerConnection do
         if id == state.id do
             GenServer.cast(state.server, {:ready, id})
         end
-        {:noreply, state}
-    end
-
-    def handle_info({:begin, %{players: players, map: map}}, state) do
-        :gen_tcp.send(state.socket, encode(%{
-            punter: state.id,
-            punters: players,
-            map: map
-        }))
         {:noreply, state}
     end
 

@@ -63,7 +63,7 @@ defmodule Punting.TcpServer do
 
     def handle_cast({:begin, workers}, state) do
         Enum.each(Map.values(workers), fn %{pid: pid} ->
-            send pid, {:begin, %{players: state.players, map: state.map}}
+            GenServer.cast pid, {:begin, %{players: state.players, map: state.map}}
         end)
         {:noreply, state}
     end
